@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
+
 	"github.com/cofsa-ca/go-utils/retry"
 	_ "github.com/golang-migrate/migrate/v4/database/cockroachdb"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -12,7 +14,6 @@ import (
 	"github.com/pkg/errors"
 	"go.elastic.co/apm/module/apmsql/v2"
 	_ "go.elastic.co/apm/module/apmsql/v2/pq"
-	"time"
 )
 
 type CockroachSQLDatabase struct {
@@ -36,7 +37,7 @@ type sqlDatabaseExecResult struct {
 	result sql.Result
 }
 
-func NewCockroachSQLDatabase(ctx context.Context, dbSettings DatabaseSettings) (OperatorDatabase, error) {
+func NewCockroachSQLDatabase(ctx context.Context, dbSettings DatabaseSettings) (QuantumAuthDatabase, error) {
 
 	retryCfg := retry.DefaultConfig()
 	retryCfg.MaxDelayBeforeRetrying = 1 * time.Second
@@ -67,11 +68,11 @@ func NewCockroachSQLDatabase(ctx context.Context, dbSettings DatabaseSettings) (
 
 }
 
-func (db *CockroachSQLDatabase) QueryRow(ctx context.Context, sql string, arguments ...interface{}) (OperatorDatabaseRow, error) {
+func (db *CockroachSQLDatabase) QueryRow(ctx context.Context, sql string, arguments ...interface{}) (QuantumAuthDatabaseRow, error) {
 	return db.dbPool.QueryRowContext(ctx, sql, arguments...), nil
 }
 
-func (db *CockroachSQLDatabase) Query(ctx context.Context, sql string, arguments ...interface{}) (OperatorDatabaseRows, error) {
+func (db *CockroachSQLDatabase) Query(ctx context.Context, sql string, arguments ...interface{}) (QuantumAuthDatabaseRows, error) {
 	result, err := db.dbPool.QueryContext(ctx, sql, arguments...)
 	if err != nil {
 		return nil, err
@@ -98,11 +99,11 @@ func (dbRows *sqlDatabaseRows) Next() bool {
 	return dbRows.rows.Next()
 }
 
-func (db *CockroachSQLDatabase) Exec(ctx context.Context, sql string, arguments ...interface{}) (OperatorDatabaseExecResult, error) {
+func (db *CockroachSQLDatabase) Exec(ctx context.Context, sql string, arguments ...interface{}) (QuantumAuthDatabaseExecResult, error) {
 	return db.dbPool.ExecContext(ctx, sql, arguments...)
 }
 
-func (db *CockroachSQLDatabase) GetTransaction(ctx context.Context) (OperatorDatabaseTransaction, error) {
+func (db *CockroachSQLDatabase) GetTransaction(ctx context.Context) (QuantumAuthDatabaseTransaction, error) {
 	opts := &sql.TxOptions{
 		ReadOnly:  false,
 		Isolation: sql.LevelDefault,
@@ -123,7 +124,7 @@ func (sqlResult sqlDatabaseExecResult) RowsAffected() (int64, error) {
 	return sqlResult.RowsAffected()
 }
 
-func (sqlTx *sqlTransaction) Exec(ctx context.Context, sql string, arguments ...interface{}) (OperatorDatabaseExecResult, error) {
+func (sqlTx *sqlTransaction) Exec(ctx context.Context, sql string, arguments ...interface{}) (QuantumAuthDatabaseExecResult, error) {
 	return sqlTx.tx.ExecContext(ctx, sql, arguments...)
 }
 func (sqlTx *sqlTransaction) Commit(ctx context.Context) error {
