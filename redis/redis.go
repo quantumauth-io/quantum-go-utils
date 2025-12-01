@@ -1,16 +1,17 @@
-// redisredis.go
 package redis
 
 import (
 	"context"
 	"crypto/tls"
+	"net"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 )
 
 type Config struct {
-	Addr         string        // "localhost:6379"
+	Host         string        // "localhost:6379"
+	Port         string        // "6379"
 	Username     string        // optional
 	Password     string        // optional
 	DB           int           // default 0
@@ -22,8 +23,9 @@ type Config struct {
 
 // NewClient creates and pings a Redis client.
 func NewClient(ctx context.Context, cfg Config) (*redis.Client, error) {
-	if cfg.Addr == "" {
-		cfg.Addr = "localhost:6379"
+	if cfg.Host == "" {
+		cfg.Host = "localhost"
+		cfg.Port = "6379"
 	}
 	if cfg.DialTimeout == 0 {
 		cfg.DialTimeout = 5 * time.Second
@@ -36,7 +38,7 @@ func NewClient(ctx context.Context, cfg Config) (*redis.Client, error) {
 	}
 
 	opts := &redis.Options{
-		Addr:         cfg.Addr,
+		Addr:         net.JoinHostPort(cfg.Host, cfg.Port),
 		Username:     cfg.Username,
 		Password:     cfg.Password,
 		DB:           cfg.DB,
