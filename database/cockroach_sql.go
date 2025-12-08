@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/cofsa-ca/go-utils/retry"
+	"github.com/Madeindreams/quantum-go-utils/retry"
 	_ "github.com/golang-migrate/migrate/v4/database/cockroachdb"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source"

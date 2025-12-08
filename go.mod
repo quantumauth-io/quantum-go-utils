@@ -4,7 +4,6 @@ go 1.25.4
 
 require (
 	github.com/cockroachdb/cockroach-go/v2 v2.4.2
-	github.com/cofsa-ca/go-utils v0.0.12
 	github.com/fatih/structs v1.1.0
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/jackc/pgconn v1.14.3

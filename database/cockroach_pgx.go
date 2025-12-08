@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/Madeindreams/quantum-go-utils/retry"
 	"github.com/cockroachdb/cockroach-go/v2/crdb"
-	"github.com/cofsa-ca/go-utils/retry"
 	"github.com/golang-migrate/migrate/v4/source"
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v4"

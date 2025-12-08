@@ -3,9 +3,10 @@ package retry
 import (
 	"context"
 	"fmt"
-	"github.com/cofsa-ca/go-utils/log"
-	"github.com/pkg/errors"
 	"time"
+
+	"github.com/Madeindreams/quantum-go-utils/log"
+	"github.com/pkg/errors"
 )
 
 func SleepWithContext(ctx context.Context, duration time.Duration) {
