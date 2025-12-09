@@ -1,4 +1,4 @@
-module github.com/Madeindreams/quantum-go-utils
+module github.com/quantumauth-io/quantum-go-utils
 
 go 1.25.4
 

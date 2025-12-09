@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Madeindreams/quantum-go-utils/log"
 	"github.com/pkg/errors"
+	"github.com/quantumauth-io/quantum-go-utils/log"
 )
 
 func SleepWithContext(ctx context.Context, duration time.Duration) {

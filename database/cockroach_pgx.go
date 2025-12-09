@@ -4,13 +4,13 @@ import (
 	"context"
 	"time"
 
-	"github.com/Madeindreams/quantum-go-utils/retry"
 	"github.com/cockroachdb/cockroach-go/v2/crdb"
 	"github.com/golang-migrate/migrate/v4/source"
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/pkg/errors"
+	"github.com/quantumauth-io/quantum-go-utils/retry"
 	"go.elastic.co/apm/module/apmpgx/v2"
 )
 

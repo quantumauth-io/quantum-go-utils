@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Madeindreams/quantum-go-utils/retry"
 	_ "github.com/golang-migrate/migrate/v4/database/cockroachdb"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/pkg/errors"
+	"github.com/quantumauth-io/quantum-go-utils/retry"
 	"go.elastic.co/apm/module/apmsql/v2"
 	_ "go.elastic.co/apm/module/apmsql/v2/pq"
 )

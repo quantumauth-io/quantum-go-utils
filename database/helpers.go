@@ -7,14 +7,14 @@ import (
 	"os"
 	"time"
 
-	"github.com/Madeindreams/quantum-go-utils/constants"
-	"github.com/Madeindreams/quantum-go-utils/retry"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/source"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/lib/pq"
 	"github.com/pkg/errors"
+	"github.com/quantumauth-io/quantum-go-utils/constants"
+	"github.com/quantumauth-io/quantum-go-utils/retry"
 )
 
 const (
