@@ -121,7 +121,7 @@ func (dbRows *sqlDatabaseRows) Scan(dest ...interface{}) error {
 }
 
 func (sqlResult sqlDatabaseExecResult) RowsAffected() (int64, error) {
-	return sqlResult.RowsAffected()
+	return sqlResult.result.RowsAffected()
 }
 
 func (sqlTx *sqlTransaction) Exec(ctx context.Context, sql string, arguments ...interface{}) (QuantumAuthDatabaseExecResult, error) {

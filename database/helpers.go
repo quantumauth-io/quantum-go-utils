@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net"
 	"os"
 	"time"
 
@@ -155,15 +156,32 @@ func setDBConfig(dbPoolI interface{}, dbSettings DatabaseSettings) interface{} {
 	return nil
 }
 
+// used by both SQL + PGX drivers
 func isRetryable(err error) bool {
-	var pqError *pq.Error
-
-	if err == pgx.ErrNoRows || err == sql.ErrNoRows {
+	if err == nil {
 		return false
-	} else if ok := errors.As(err, &pqError); ok {
-		if pqError.Code == constants.UniqueConstraintViolationCode {
+	}
+
+	// 1) never retry "no rows"
+	if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
+		return false
+	}
+
+	// 2) never retry unique constraint violations
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) {
+		if pqErr.Code == constants.UniqueConstraintViolationCode {
 			return false
 		}
 	}
+
+	// 3) network-level errors (e.g. "use of closed network connection")
+	var netErr *net.OpError
+	if errors.As(err, &netErr) {
+		// let the pool create a fresh connection and retry
+		return true
+	}
+
+	// 4) default: optimistic for Cockroach / transient DB errors
 	return true
 }

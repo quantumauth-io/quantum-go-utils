@@ -39,6 +39,7 @@ type pgxDatabaseRows struct {
 	rows pgx.Rows
 }
 
+// Fargate-friendly PGX pool
 func NewCockroachPGXDatabase(ctx context.Context, dbSettings DatabaseSettings) (QuantumAuthDatabase, error) {
 	connStr, err := getConnectionString(dbSettings)
 	if err != nil {
@@ -51,23 +52,52 @@ func NewCockroachPGXDatabase(ctx context.Context, dbSettings DatabaseSettings) (
 
 	result, err := retry.Retry(ctx, retryCfg,
 		func(context.Context) ([]interface{}, error) {
-			dbPool, err2 := pgxpool.Connect(ctx, databaseDriverType+"://"+connStr)
+			cfg, err := pgxpool.ParseConfig(databaseDriverType + "://" + connStr)
+			if err != nil {
+				return nil, errors.Wrap(err, "error parsing pgx config")
+			}
+
+			// pool sizing based on your settings/defaults
+			finalMinPoolSize := dbSettings.MinPoolSize
+			if finalMinPoolSize == 0 {
+				finalMinPoolSize = defaultMinDBPoolSize
+			}
+			finalMaxPoolSize := dbSettings.MaxPoolSize
+			if finalMaxPoolSize == 0 {
+				finalMaxPoolSize = defaultMaxDBPoolSize
+			}
+
+			cfg.MinConns = int32(finalMinPoolSize)
+			cfg.MaxConns = int32(finalMaxPoolSize)
+
+			// Fargate/NAT-friendly lifetimes
+			cfg.MaxConnLifetime = 60 * time.Second
+			cfg.MaxConnIdleTime = 30 * time.Second
+			cfg.HealthCheckPeriod = 15 * time.Second
+
+			dbPool, err2 := pgxpool.ConnectConfig(ctx, cfg)
 			if err2 != nil {
 				return nil, errors.Wrap(err2, "error opening the database")
 			}
 
-			dbPoolWithConfig := setDBConfig(dbPool, dbSettings)
-			if dbPoolWithConfig == nil {
-				return nil, errors.New("Failed to configure DB pool")
+			// ping to verify connectivity
+			pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			if err := dbPool.Ping(pingCtx); err != nil {
+				dbPool.Close()
+				return nil, errors.Wrap(err, "failed to ping database")
 			}
 
-			return []interface{}{&CockroachPGXDatabase{dbPool: dbPoolWithConfig.(*pgxpool.Pool), settings: dbSettings}}, nil
+			return []interface{}{&CockroachPGXDatabase{
+				dbPool:   dbPool,
+				settings: dbSettings,
+			}}, nil
 		},
 		nil,
 		"Database Connection",
 	)
 	if err != nil {
-		return nil, errors.Wrapf(err, "Failed to instanciate db after retries")
+		return nil, errors.Wrapf(err, "Failed to instantiate db after retries")
 	}
 	return result[0].(*CockroachPGXDatabase), nil
 }
@@ -93,7 +123,7 @@ func (db *CockroachPGXDatabase) GetTransaction(ctx context.Context) (QuantumAuth
 
 			return []interface{}{&pgxTransaction{txn}}, nil
 		},
-		nil,
+		isRetryable, // <- use retryable logic here too
 		"Get DB Transaction",
 	)
 	if err != nil {
@@ -103,14 +133,12 @@ func (db *CockroachPGXDatabase) GetTransaction(ctx context.Context) (QuantumAuth
 }
 
 func (db *CockroachPGXDatabase) Exec(ctx context.Context, sql string, arguments ...interface{}) (QuantumAuthDatabaseExecResult, error) {
-
 	retryCfg := retry.DefaultConfig()
 	retryCfg.MaxDelayBeforeRetrying = 1 * time.Second
 	retryCfg.MaxNumRetries = defaultMaxRetry
 
 	result, err := retry.Retry(ctx, retryCfg,
 		func(context.Context) ([]interface{}, error) {
-
 			conn, err := db.dbPool.Acquire(ctx)
 			if err != nil {
 				return nil, err
@@ -118,22 +146,20 @@ func (db *CockroachPGXDatabase) Exec(ctx context.Context, sql string, arguments 
 			defer conn.Release()
 			apmpgx.Instrument(conn.Conn().Config())
 
-			var result pgconn.CommandTag
+			var cmd pgconn.CommandTag
 			err = crdb.Execute(func() error {
-				result, err = conn.Exec(ctx, sql, arguments...)
+				cmd, err = conn.Exec(ctx, sql, arguments...)
 				if err != nil {
 					return err
 				}
-
 				return nil
 			})
 			if err != nil {
 				return nil, err
 			}
-			return []interface{}{&pgxDatabaseExecResult{result}}, nil
-
+			return []interface{}{&pgxDatabaseExecResult{cmdTag: cmd}}, nil
 		},
-		nil,
+		isRetryable, // <- was nil
 		"Database Exec",
 	)
 	if err != nil {
@@ -150,19 +176,16 @@ func (db *CockroachPGXDatabase) QueryRow(ctx context.Context, sql string, argume
 
 	result, err := retry.Retry(ctx, retryCfg,
 		func(context.Context) ([]interface{}, error) {
-
 			conn, err := db.dbPool.Acquire(ctx)
 			if err != nil {
 				return nil, err
 			}
-
 			defer conn.Release()
 			apmpgx.Instrument(conn.Conn().Config())
 
 			var row QuantumAuthDatabaseRow
 			err = crdb.Execute(func() error {
 				row = conn.QueryRow(ctx, sql, arguments...)
-
 				return nil
 			})
 			if err != nil {
@@ -174,7 +197,6 @@ func (db *CockroachPGXDatabase) QueryRow(ctx context.Context, sql string, argume
 		isRetryable,
 		"Database QueryRow",
 	)
-
 	if err != nil {
 		return nil, errors.Wrapf(err, "Failed to QueryRow %s", sql)
 	}
@@ -193,7 +215,6 @@ func (db *CockroachPGXDatabase) Query(ctx context.Context, sql string, arguments
 			if err != nil {
 				return nil, err
 			}
-
 			defer conn.Release()
 			apmpgx.Instrument(conn.Conn().Config())
 
@@ -205,17 +226,15 @@ func (db *CockroachPGXDatabase) Query(ctx context.Context, sql string, arguments
 				}
 				return nil
 			})
-
 			if err != nil {
 				return nil, errors.Wrapf(err, "Failed to Execute Query %s", sql)
 			}
 
-			return []interface{}{&pgxDatabaseRows{rows}}, err
+			return []interface{}{&pgxDatabaseRows{rows: rows}}, nil
 		},
 		isRetryable,
 		"Database Query",
 	)
-
 	if err != nil {
 		return nil, errors.Wrapf(err, "Failed to queryRows %s after retries", sql)
 	}
@@ -236,11 +255,12 @@ func (pgxRows *pgxDatabaseRows) Next() bool {
 func (pgxRows *pgxDatabaseRows) Scan(dest ...interface{}) error {
 	return pgxRows.rows.Scan(dest...)
 }
+
 func (pgxResult *pgxDatabaseExecResult) RowsAffected() (int64, error) {
 	return pgxResult.cmdTag.RowsAffected(), nil
 }
-func (pgxTransaction *pgxTransaction) Exec(ctx context.Context, sql string, arguments ...interface{}) (QuantumAuthDatabaseExecResult, error) {
 
+func (pgxTransaction *pgxTransaction) Exec(ctx context.Context, sql string, arguments ...interface{}) (QuantumAuthDatabaseExecResult, error) {
 	var dbResult pgconn.CommandTag
 	var err error
 
@@ -260,19 +280,18 @@ func (pgxTransaction *pgxTransaction) Exec(ctx context.Context, sql string, argu
 			if err != nil {
 				return nil, err
 			}
-			return []interface{}{&pgxDatabaseExecResult{dbResult}}, nil
+			return []interface{}{&pgxDatabaseExecResult{cmdTag: dbResult}}, nil
 		},
-		nil,
+		isRetryable, // <- was nil
 		"Database Execute Transaction",
 	)
-
 	if err != nil {
 		return nil, errors.Wrapf(err, "Failed to execute db transaction %s after retries", sql)
 	}
 
 	return result[0].(*pgxDatabaseExecResult), nil
-
 }
+
 func (pgxTransaction *pgxTransaction) Commit(ctx context.Context) error {
 	retryCfg := retry.DefaultConfig()
 	retryCfg.MaxDelayBeforeRetrying = 1 * time.Second
@@ -280,19 +299,17 @@ func (pgxTransaction *pgxTransaction) Commit(ctx context.Context) error {
 
 	_, err := retry.Retry(ctx, retryCfg,
 		func(context.Context) ([]interface{}, error) {
-			err := pgxTransaction.tx.Commit(ctx)
-			if err != nil {
+			if err := pgxTransaction.tx.Commit(ctx); err != nil {
 				return nil, err
 			}
 			return nil, nil
 		},
-		nil,
+		isRetryable,
 		"Database Commit Transaction",
 	)
 	if err != nil {
 		return errors.Wrapf(err, "Failed to commit db transaction after retries")
 	}
-
 	return nil
 }
 
@@ -303,19 +320,17 @@ func (pgxTransaction *pgxTransaction) Rollback(ctx context.Context) error {
 
 	_, err := retry.Retry(ctx, retryCfg,
 		func(context.Context) ([]interface{}, error) {
-			err := pgxTransaction.tx.Rollback(ctx)
-			if err != nil {
+			if err := pgxTransaction.tx.Rollback(ctx); err != nil {
 				return nil, err
 			}
 			return nil, nil
 		},
-		nil,
+		isRetryable,
 		"Database Rollback Transaction",
 	)
 	if err != nil {
 		return errors.Wrapf(err, "Failed to rollback db transaction after retries")
 	}
-
 	return nil
 }
 
