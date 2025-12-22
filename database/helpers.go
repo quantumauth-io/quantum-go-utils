@@ -89,21 +89,26 @@ func getConnectionString(dbSettings DatabaseSettings) (string, error) {
 		dbSettings.Database,
 	)
 
+	// Local/dev docker etc.
 	if dbSettings.SSLModeDisable {
-		connString += "?sslmode=disable"
-	} else {
-		if dbSettings.CertPath == "" {
-			return "", errors.New("ssl mode was enabled but cert path was empty")
-		}
-
-		if _, err := os.Stat(dbSettings.CertPath); errors.Is(err, os.ErrNotExist) {
-			return "", errors.New("ssl mode was enabled but cert file not found")
-		}
-
-		connString += fmt.Sprintf("?sslmode=verify-ca&sslrootcert=%s", dbSettings.CertPath)
+		return connString + "?sslmode=disable", nil
 	}
 
-	return connString, nil
+	// Aurora / RDS: encryption required.
+	// Default to "require" so we don't need a CA bundle inside the container.
+	// Only use verify-ca when a cert path is provided.
+	if dbSettings.CertPath == "" {
+		return connString + "?sslmode=require", nil
+	}
+
+	// If cert path is provided, enforce it exists and do verify-ca
+	if _, err := os.Stat(dbSettings.CertPath); errors.Is(err, os.ErrNotExist) {
+		return "", errors.New("ssl mode was enabled but cert file not found")
+	} else if err != nil {
+		return "", err
+	}
+
+	return connString + fmt.Sprintf("?sslmode=verify-ca&sslrootcert=%s", dbSettings.CertPath), nil
 }
 
 func pingDB(ctx context.Context, pingFn func(ctx context.Context) error) error {
