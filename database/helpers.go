@@ -64,7 +64,7 @@ func migrateWithIOFS(ctx context.Context, source source.Driver, cfg DatabaseSett
 
 	_, err = retry.Retry(ctx, retryCfg,
 		func(context.Context) ([]interface{}, error) {
-			m, err2 := migrate.NewWithSourceInstance("iofs", source, "cockroachdb://"+connectionString)
+			m, err2 := migrate.NewWithSourceInstance("iofs", source, "postgres://"+connectionString)
 			if err2 != nil {
 				return nil, errors.Wrap(err2, "Failed to initialize migrations")
 			}
