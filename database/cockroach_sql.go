@@ -49,7 +49,7 @@ func NewCockroachSQLDatabase(ctx context.Context, dbSettings DatabaseSettings) (
 	}
 	result, err := retry.Retry(ctx, retryCfg,
 		func(context.Context) ([]interface{}, error) {
-			db, err3 := apmsql.Open("postgres", fmt.Sprintf("postgres://%s", connStr))
+			db, err3 := apmsql.Open("postgres", fmt.Sprintf(connStr))
 			if err3 != nil {
 				return nil, errors.Wrap(err3, "error opening the database")
 			}
