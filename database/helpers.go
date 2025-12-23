@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"log"
 	"net"
 	"net/url"
 	"os"
@@ -87,6 +88,8 @@ func getConnectionString(dbSettings DatabaseSettings) (string, error) {
 		Host:   net.JoinHostPort(dbSettings.Host, dbSettings.Port),
 		Path:   dbSettings.Database,
 	}
+
+	log.Println(u)
 
 	q := u.Query()
 
