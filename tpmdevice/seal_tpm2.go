@@ -134,6 +134,13 @@ func createPrimaryStorageKey(rwc io.ReadWriter, ownerAuth string) (tpmutil.Handl
 			tpm2.FlagUserWithAuth,
 		ECCParameters: &tpm2.ECCParams{
 			CurveID: tpm2.CurveNISTP256,
+
+			// ✅ REQUIRED for restricted storage (decrypt+restricted)
+			Symmetric: &tpm2.SymScheme{
+				Alg:     tpm2.AlgAES,
+				KeyBits: 128,
+				Mode:    tpm2.AlgCFB,
+			},
 		},
 	}
 
