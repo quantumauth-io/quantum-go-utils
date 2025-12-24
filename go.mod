@@ -3,9 +3,9 @@ module github.com/quantumauth-io/quantum-go-utils
 go 1.25.4
 
 require (
-	github.com/cockroachdb/cockroach-go/v2 v2.4.2
 	github.com/fatih/structs v1.1.0
 	github.com/golang-migrate/migrate/v4 v4.19.1
+	github.com/google/go-tpm v0.9.7
 	github.com/jackc/pgconn v1.14.3
 	github.com/jackc/pgx/v4 v4.18.3
 	github.com/jeremywohl/flatten v1.0.1
@@ -21,6 +21,7 @@ require (
 require (
 	github.com/armon/go-radix v1.0.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/cockroachdb/cockroach-go/v2 v2.4.2 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/elastic/go-sysinfo v1.7.1 // indirect
 	github.com/elastic/go-windows v1.0.0 // indirect
