@@ -168,3 +168,57 @@ func (c *Client) SupportedNetworks() []NetworkInfo {
 	}
 	return out
 }
+
+func (c *Client) ActiveNetwork() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.cfg == nil {
+		return ""
+	}
+	return c.cfg.ActiveNetwork
+}
+
+func (c *Client) ActiveRPC() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.cfg == nil {
+		return ""
+	}
+	return c.cfg.ActiveRPC
+}
+
+func (c *Client) WithNetwork(ctx context.Context, networkName string, fn func() error) error {
+	prevNet := c.ActiveNetwork()
+	prevRPC := c.ActiveRPC()
+
+	// switch
+	if err := c.UseNetwork(networkName); err != nil {
+		return err
+	}
+	// keep same RPC name if available, else UseNetwork already picked first
+	if prevRPC != "" {
+		_ = c.UseRPC(prevRPC) // best effort
+	}
+
+	if err := c.EnsureBackend(ctx); err != nil {
+		// restore best-effort before returning
+		_ = c.UseNetwork(prevNet)
+		if prevRPC != "" {
+			_ = c.UseRPC(prevRPC)
+		}
+		_ = c.EnsureBackend(ctx)
+		return err
+	}
+
+	// run
+	runErr := fn()
+
+	// restore (best effort)
+	_ = c.UseNetwork(prevNet)
+	if prevRPC != "" {
+		_ = c.UseRPC(prevRPC)
+	}
+	_ = c.EnsureBackend(ctx)
+
+	return runErr
+}
