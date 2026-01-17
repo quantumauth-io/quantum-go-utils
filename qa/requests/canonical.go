@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/google/uuid"
 )
 
 type CanonicalInput struct {
@@ -250,6 +252,20 @@ func NormalizeAndValidatePath(p string, opt PathNormalizeOptions) (string, error
 		out += "?" + u.RawQuery
 	}
 	return out, nil
+}
+
+func ValidateUUIDv4(s string) (string, error) {
+	u, err := uuid.Parse(strings.TrimSpace(s))
+	if err != nil {
+		return "", fmt.Errorf("invalid uuid")
+	}
+	if u == uuid.Nil {
+		return "", fmt.Errorf("nil uuid not allowed")
+	}
+	if u.Version() != 4 {
+		return "", fmt.Errorf("uuid must be v4")
+	}
+	return u.String(), nil
 }
 
 func collapseSlashes(s string) string {
