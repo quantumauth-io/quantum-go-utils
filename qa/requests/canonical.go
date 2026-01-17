@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 type CanonicalInput struct {
@@ -32,6 +33,21 @@ type ParsedCanonical struct {
 	UserID      string
 	DeviceID    string
 	BodySHA256  string
+}
+type PathNormalizeOptions struct {
+	CollapseSlashes bool
+}
+
+var allowedMethods = map[string]struct{}{
+	"GET":     {},
+	"POST":    {},
+	"PUT":     {},
+	"PATCH":   {},
+	"DELETE":  {},
+	"HEAD":    {},
+	"OPTIONS": {},
+	"TRACE":   {},
+	"CONNECT": {},
 }
 
 func CanonicalString(ci CanonicalInput) string {
@@ -172,4 +188,84 @@ func NormalizeBackendHost(input string) string {
 	raw = strings.ToLower(raw)
 	raw = strings.TrimSuffix(raw, ".") // optional: remove trailing dot
 	return raw
+}
+
+func NormalizeAndValidateMethod(m string) (string, error) {
+	m = strings.TrimSpace(m)
+	if m == "" {
+		return "", fmt.Errorf("missing method")
+	}
+	m = strings.ToUpper(m)
+
+	if _, ok := allowedMethods[m]; !ok {
+		return "", fmt.Errorf("unsupported method: %s", m)
+	}
+	return m, nil
+}
+
+func NormalizeAndValidatePath(p string, opt PathNormalizeOptions) (string, error) {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return "", fmt.Errorf("missing path")
+	}
+	if !utf8.ValidString(p) {
+		return "", fmt.Errorf("path is not valid utf-8")
+	}
+
+	// Reject whitespace/control chars anywhere (prevents header/request-target injection weirdness)
+	for _, r := range p {
+		if r <= 0x1F || r == 0x7F {
+			return "", fmt.Errorf("path contains control characters")
+		}
+	}
+
+	// Reject full URL or scheme-relative forms (we only sign origin-form request-target)
+	if strings.Contains(p, "://") || strings.HasPrefix(p, "//") {
+		return "", fmt.Errorf("path must be origin-form (start with '/')")
+	}
+
+	// Fragments should never be in an HTTP request target; reject to avoid ambiguity
+	if strings.Contains(p, "#") {
+		return "", fmt.Errorf("path must not contain fragment")
+	}
+
+	if !strings.HasPrefix(p, "/") {
+		return "", fmt.Errorf("path must start with '/'")
+	}
+
+	u, err := url.ParseRequestURI(p)
+	if err != nil {
+		return "", fmt.Errorf("invalid path: %w", err)
+	}
+
+	// Minimal normalization: optional collapse of repeated slashes in the PATH ONLY.
+	pathOnly := u.Path
+	if opt.CollapseSlashes {
+		pathOnly = collapseSlashes(pathOnly)
+	}
+
+	// Recompose without altering RawQuery encoding or ordering
+	out := pathOnly
+	if u.RawQuery != "" {
+		out += "?" + u.RawQuery
+	}
+	return out, nil
+}
+
+func collapseSlashes(s string) string {
+	if !strings.Contains(s, "//") {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	prev := byte(0)
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '/' && prev == '/' {
+			continue
+		}
+		b.WriteByte(c)
+		prev = c
+	}
+	return b.String()
 }
