@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -101,4 +103,73 @@ func ParseCanonicalString(s string) (*ParsedCanonical, error) {
 	out.BodySHA256 = strings.TrimSpace(strings.TrimPrefix(lines[7], bodyPrefix))
 
 	return out, nil
+}
+
+// NormalizeBackendHost returns canonical "hostname[:port]".
+// - Lowercases hostname
+// - Removes scheme/path/query/fragment
+// - Strips default ports 80 and 443
+// - Preserves non-default ports (e.g. :4000)
+func NormalizeBackendHost(input string) string {
+	s := strings.TrimSpace(input)
+	if s == "" {
+		return ""
+	}
+
+	// If it already looks like a URL, parse directly.
+	// Otherwise add a dummy scheme so url.Parse can handle host[:port].
+	toParse := s
+	if !strings.Contains(toParse, "://") {
+		toParse = "http://" + toParse
+	}
+
+	u, err := url.Parse(toParse)
+	if err == nil && u.Host != "" {
+		// u.Host may include port; u.Hostname()/Port() split safely.
+		host := strings.ToLower(strings.TrimSpace(u.Hostname()))
+		port := strings.TrimSpace(u.Port())
+
+		// Strip default ports unconditionally (scheme-agnostic by design).
+		if port == "80" || port == "443" {
+			port = ""
+		}
+		if host == "" {
+			return ""
+		}
+		if port != "" {
+			return net.JoinHostPort(host, port)
+		}
+		return host
+	}
+
+	// Fallback: strip any scheme-like prefix, then take up to first '/'.
+	// e.g. "https://EXAMPLE.com:4000/foo" -> "EXAMPLE.com:4000"
+	raw := s
+	if i := strings.Index(raw, "://"); i >= 0 {
+		raw = raw[i+3:]
+	}
+	raw = strings.SplitN(raw, "/", 2)[0]
+	raw = strings.TrimSpace(raw)
+
+	// If raw is host:port, split; otherwise just lowercase host.
+	host, port, err2 := net.SplitHostPort(raw)
+	if err2 == nil {
+		host = strings.ToLower(strings.TrimSpace(host))
+		port = strings.TrimSpace(port)
+		if port == "80" || port == "443" {
+			port = ""
+		}
+		if host == "" {
+			return ""
+		}
+		if port != "" {
+			return net.JoinHostPort(host, port)
+		}
+		return host
+	}
+
+	// Could be plain hostname or an IPv6 literal without port.
+	raw = strings.ToLower(raw)
+	raw = strings.TrimSuffix(raw, ".") // optional: remove trailing dot
+	return raw
 }
