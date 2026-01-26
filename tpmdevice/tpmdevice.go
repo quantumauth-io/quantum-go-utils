@@ -7,17 +7,18 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"github.com/google/go-tpm/legacy/tpm2"
-	"github.com/google/go-tpm/tpmutil"
-	"github.com/quantumauth-io/quantum-go-utils/log"
 	"io"
 	"os"
 	"runtime"
 	"strings"
+
+	"github.com/google/go-tpm/legacy/tpm2"
+	"github.com/google/go-tpm/tpmutil"
+	"github.com/quantumauth-io/quantum-go-utils/log"
 )
 
 const (
-	defaultHandle      = tpmutil.Handle(0x8100A001) // QA reserved default
+	DefaultHandle      = tpmutil.Handle(0x8100A001) // QA reserved default
 	defaultHandleStart = tpmutil.Handle(0x8100A001)
 	defaultHandleCount = uint32(32)
 )
@@ -108,7 +109,6 @@ func pickOrCreateHandle(rwc io.ReadWriteCloser, cfg Config, start tpmutil.Handle
 		if err == nil {
 			uncompressed, err2 := publicToUncompressed(pub)
 			if err2 == nil {
-				log.Info("tpmdevice reusing ECC key", "handle", fmt.Sprintf("0x%x", h))
 				return &client{
 					rwc:    rwc,
 					handle: h,

@@ -1,7 +1,6 @@
 package requests
 
 import (
-	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"net"
@@ -14,22 +13,24 @@ import (
 )
 
 type CanonicalInput struct {
-	Method string
-	Path   string
-	Host   string
+	Method      string
+	Path        string
+	AppID       string
+	BackendHost string
 
 	TS          int64
 	ChallengeID string
 	UserID      string
 	DeviceID    string
 
-	Body []byte
+	BodySHA256Hex string
 }
 
 type ParsedCanonical struct {
 	Method      string
 	Path        string
-	Host        string
+	AppID       string
+	BackendHost string
 	TS          int64
 	ChallengeID string
 	UserID      string
@@ -52,19 +53,34 @@ var allowedMethods = map[string]struct{}{
 	"CONNECT": {},
 }
 
-func CanonicalString(ci CanonicalInput) string {
-	bodyHash := sha256.Sum256(ci.Body)
+func CanonicalString(ci CanonicalInput) (string, error) {
+	bodyHex := strings.ToLower(strings.TrimSpace(ci.BodySHA256Hex))
+	if bodyHex == "" {
+		return "", fmt.Errorf("missing body sha256")
+	}
+	if len(bodyHex) != 64 {
+		return "", fmt.Errorf("invalid body sha256 length")
+	}
+	if _, err := hex.DecodeString(bodyHex); err != nil {
+		return "", fmt.Errorf("invalid body sha256 hex")
+	}
+
+	aud := NormalizeBackendHost(ci.BackendHost)
+	if aud == "" {
+		return "", fmt.Errorf("invalid aud")
+	}
 
 	return strings.Join([]string{
 		strings.ToUpper(ci.Method),
 		ci.Path,
-		ci.Host,
+		fmt.Sprintf("APP: %s", ci.AppID),
+		fmt.Sprintf("AUD: %s", aud),
 		fmt.Sprintf("TS: %d", ci.TS),
 		fmt.Sprintf("CHALLENGE: %s", ci.ChallengeID),
 		fmt.Sprintf("USER: %s", ci.UserID),
 		fmt.Sprintf("DEVICE: %s", ci.DeviceID),
-		fmt.Sprintf("BODY-SHA256: %s", hex.EncodeToString(bodyHash[:])),
-	}, "\n")
+		fmt.Sprintf("BODY-SHA256: %s", bodyHex),
+	}, "\n"), nil
 }
 
 // ParseCanonicalString parses a canonical string back into fields.
@@ -77,15 +93,28 @@ func ParseCanonicalString(s string) (*ParsedCanonical, error) {
 	out := &ParsedCanonical{
 		Method: strings.TrimSpace(lines[0]),
 		Path:   strings.TrimSpace(lines[1]),
-		Host:   strings.TrimSpace(lines[2]),
 	}
+
+	// APP
+	const appPrefix = "APP: "
+	if !strings.HasPrefix(lines[2], appPrefix) {
+		return nil, fmt.Errorf("invalid APP line: %q", lines[2])
+	}
+	out.AppID = strings.TrimSpace(strings.TrimPrefix(lines[2], appPrefix))
+
+	// AUD
+	const audPrefix = "AUD: "
+	if !strings.HasPrefix(lines[3], audPrefix) {
+		return nil, fmt.Errorf("invalid AUD line: %q", lines[3])
+	}
+	out.BackendHost = strings.TrimSpace(strings.TrimPrefix(lines[3], audPrefix))
 
 	// TS
 	const tsPrefix = "TS: "
-	if !strings.HasPrefix(lines[3], tsPrefix) {
-		return nil, fmt.Errorf("invalid TS line: %q", lines[3])
+	if !strings.HasPrefix(lines[4], tsPrefix) {
+		return nil, fmt.Errorf("invalid TS line: %q", lines[4])
 	}
-	tsStr := strings.TrimSpace(strings.TrimPrefix(lines[3], tsPrefix))
+	tsStr := strings.TrimSpace(strings.TrimPrefix(lines[4], tsPrefix))
 	ts, err := strconv.ParseInt(tsStr, 10, 64)
 	if err != nil {
 		return nil, fmt.Errorf("parse TS: %w", err)
@@ -94,33 +123,87 @@ func ParseCanonicalString(s string) (*ParsedCanonical, error) {
 
 	// CHALLENGE
 	const chPrefix = "CHALLENGE: "
-	if !strings.HasPrefix(lines[4], chPrefix) {
-		return nil, fmt.Errorf("invalid CHALLENGE line: %q", lines[4])
+	if !strings.HasPrefix(lines[5], chPrefix) {
+		return nil, fmt.Errorf("invalid CHALLENGE line: %q", lines[5])
 	}
-	out.ChallengeID = strings.TrimSpace(strings.TrimPrefix(lines[4], chPrefix))
+	out.ChallengeID = strings.TrimSpace(strings.TrimPrefix(lines[5], chPrefix))
 
 	// USER
 	const userPrefix = "USER: "
-	if !strings.HasPrefix(lines[5], userPrefix) {
-		return nil, fmt.Errorf("invalid USER line: %q", lines[5])
+	if !strings.HasPrefix(lines[6], userPrefix) {
+		return nil, fmt.Errorf("invalid USER line: %q", lines[6])
 	}
-	out.UserID = strings.TrimSpace(strings.TrimPrefix(lines[5], userPrefix))
+	out.UserID = strings.TrimSpace(strings.TrimPrefix(lines[6], userPrefix))
 
 	// DEVICE
 	const devPrefix = "DEVICE: "
-	if !strings.HasPrefix(lines[6], devPrefix) {
-		return nil, fmt.Errorf("invalid DEVICE line: %q", lines[6])
+	if !strings.HasPrefix(lines[7], devPrefix) {
+		return nil, fmt.Errorf("invalid DEVICE line: %q", lines[7])
 	}
-	out.DeviceID = strings.TrimSpace(strings.TrimPrefix(lines[6], devPrefix))
+	out.DeviceID = strings.TrimSpace(strings.TrimPrefix(lines[7], devPrefix))
 
 	// BODY-SHA256
 	const bodyPrefix = "BODY-SHA256: "
-	if !strings.HasPrefix(lines[7], bodyPrefix) {
-		return nil, fmt.Errorf("invalid BODY-SHA256 line: %q", lines[7])
+	if !strings.HasPrefix(lines[8], bodyPrefix) {
+		return nil, fmt.Errorf("invalid BODY-SHA256 line: %q", lines[8])
 	}
-	out.BodySHA256 = strings.TrimSpace(strings.TrimPrefix(lines[7], bodyPrefix))
+	out.BodySHA256 = strings.TrimSpace(strings.TrimPrefix(lines[8], bodyPrefix))
 
 	return out, nil
+}
+
+// HostnameForDNS takes things like:
+// - "localhost:1042"
+// - "http://localhost:1042/quantum-auth/v1/secured"
+// - "https://api.example.com:8443"
+// - "[::1]:1042"
+// and returns just the hostname you can use for DNS TXT lookup:
+// - "localhost"
+// - "api.example.com"
+// - "::1"
+func HostnameForDNS(raw string) string {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return ""
+	}
+
+	// If it looks like a URL, parse it.
+	if strings.Contains(s, "://") {
+		if u, err := url.Parse(s); err == nil {
+			s = u.Host
+		}
+	} else {
+		// If it contains a path, drop it.
+		if i := strings.IndexByte(s, '/'); i >= 0 {
+			s = s[:i]
+		}
+	}
+
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+
+	// Remove port if present.
+	// Handle IPv6 and host:port.
+	if h, _, err := net.SplitHostPort(s); err == nil {
+		return strings.TrimSpace(h)
+	}
+
+	// If it's bracketed IPv6 without port like "[::1]"
+	if strings.HasPrefix(s, "[") && strings.HasSuffix(s, "]") {
+		return strings.TrimSuffix(strings.TrimPrefix(s, "["), "]")
+	}
+
+	// Otherwise it's already host-only (or an un-splittable value); return as-is.
+	return s
+}
+
+func NormalizeOptionalBackendHost(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return NormalizeBackendHost(*p)
 }
 
 // NormalizeBackendHost returns canonical "hostname[:port]".

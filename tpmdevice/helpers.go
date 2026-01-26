@@ -3,6 +3,8 @@ package tpmdevice
 import (
 	"crypto/ecdsa"
 	"math/big"
+
+	"github.com/google/go-tpm/tpmutil"
 )
 
 // pad32 pads a big.Int to 32 bytes (big-endian).
@@ -32,3 +34,5 @@ func uncompressedFromECDSA(pub *ecdsa.PublicKey) []byte {
 
 	return append([]byte{0x04}, append(xPadded, yPadded...)...)
 }
+
+func HandleFromUint32(v uint32) tpmutil.Handle { return tpmutil.Handle(v) }

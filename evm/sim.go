@@ -1,4 +1,4 @@
-package qa_evm
+package evm
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 )
 
 // SimulatedBlockchainClient is a deterministic in-memory chain for tests/CI.
-// It uses go-qa_evm's ethclient/simulated backend. :contentReference[oaicite:2]{index=2}
+// It uses go-evm's ethclient/simulated backend. :contentReference[oaicite:2]{index=2}
 //
 // Note: ethclient/simulated does NOT provide a native SubscribeNewHead.
 // We emulate it by polling HeaderByNumber(nil) and pushing deltas.
